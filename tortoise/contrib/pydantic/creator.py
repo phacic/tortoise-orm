@@ -125,6 +125,7 @@ def pydantic_model_creator(
     sort_alphabetically: Optional[bool] = None,
     _stack: tuple = (),
     exclude_readonly: bool = False,
+    meta_override: Optional[Type] = None,
 ) -> Type[PydanticModel]:
     """
     Function to build `Pydantic Model <https://pydantic-docs.helpmanual.io/usage/models/>`__ off Tortoise Model.
@@ -146,6 +147,7 @@ def pydantic_model_creator(
             * order of reverse relations (as discovered) +
             * order of computed functions (as provided).
     :param exclude_readonly: Build a subset model that excludes any readonly fields
+    :param meta_override: A PydanticMeta class to override model's values.
     """
 
     # Fully qualified class name
@@ -181,21 +183,26 @@ def pydantic_model_creator(
 
     # Get settings and defaults
     meta = getattr(cls, "PydanticMeta", PydanticMeta)
-    default_include: Tuple[str, ...] = tuple(getattr(meta, "include", PydanticMeta.include))
-    default_exclude: Tuple[str, ...] = tuple(getattr(meta, "exclude", PydanticMeta.exclude))
-    default_computed: Tuple[str, ...] = tuple(getattr(meta, "computed", PydanticMeta.computed))
-    max_recursion: int = int(getattr(meta, "max_recursion", PydanticMeta.max_recursion))
-    exclude_raw_fields: bool = bool(
-        getattr(meta, "exclude_raw_fields", PydanticMeta.exclude_raw_fields)
+
+    def get_param(attr: str) -> Any:
+        if meta_override:
+            return getattr(meta_override, attr, getattr(meta, attr, getattr(PydanticMeta, attr)))
+        return getattr(meta, attr, getattr(PydanticMeta, attr))
+
+    default_include: Tuple[str, ...] = tuple(get_param("include"))
+    default_exclude: Tuple[str, ...] = tuple(get_param("exclude"))
+    default_computed: Tuple[str, ...] = tuple(get_param("computed"))
+
+    backward_relations: bool = bool(get_param("backward_relations"))
+
+    max_recursion: int = int(get_param("max_recursion"))
+    exclude_raw_fields: bool = bool(get_param("exclude_raw_fields"))
+    _sort_fields: bool = (
+        bool(get_param("sort_alphabetically"))
+        if sort_alphabetically is None
+        else sort_alphabetically
     )
-    _sort_fields: bool = bool(
-        getattr(meta, "sort_alphabetically", PydanticMeta.sort_alphabetically)
-    ) if sort_alphabetically is None else sort_alphabetically
-    _allow_cycles: bool = bool(
-        getattr(meta, "allow_cycles", PydanticMeta.allow_cycles)
-        if allow_cycles is None
-        else allow_cycles
-    )
+    _allow_cycles: bool = bool(get_param("allow_cycles") if allow_cycles is None else allow_cycles)
 
     # Update parameters with defaults
     include = tuple(include) + default_include
@@ -246,10 +253,19 @@ def pydantic_model_creator(
         field_map_update(("pk_field",), is_relation=False)
     field_map_update(("data_fields",), is_relation=False)
     if not exclude_readonly:
-        field_map_update(
-            ("fk_fields", "o2o_fields", "m2m_fields", "backward_fk_fields", "backward_o2o_fields")
+        included_fields: tuple = (
+            "fk_fields",
+            "o2o_fields",
+            "m2m_fields",
         )
+        if backward_relations:
+            included_fields = (
+                *included_fields,
+                "backward_fk_fields",
+                "backward_o2o_fields",
+            )
 
+        field_map_update(included_fields)
         # Add possible computed fields
         field_map.update(
             {
@@ -303,7 +319,7 @@ def pydantic_model_creator(
             else:
                 pmodel = None
 
-            # If the result is None it has been exluded and we need to exclude the field
+            # If the result is None it has been excluded and we need to exclude the field
             if pmodel is None:
                 exclude += (fname,)
             else:
@@ -366,16 +382,12 @@ def pydantic_model_creator(
             description = comment or _br_it(fdesc.get("docstring") or fdesc["description"] or "")
             fconfig["description"] = description
             fconfig["title"] = fname.replace("_", " ").title()
-            if field_default is not None:
-                if callable(field_default):
-                    fconfig["default_factory"] = field_default
-                    properties[fname] = None
-                else:
-                    properties[fname] = field_default
+            if field_default is not None and not callable(field_default):
+                properties[fname] = field_default
             pconfig.fields[fname] = fconfig
 
     # Here we endure that the name is unique, but complete objects are still labeled verbatim
-    if not has_submodel and exclude:
+    if not has_submodel:
         _name = name or f"{fqname}.leaf"
     elif has_submodel:
         _name = name or get_name()
@@ -439,6 +451,7 @@ def pydantic_queryset_creator(
         computed=computed,
         allow_cycles=allow_cycles,
         sort_alphabetically=sort_alphabetically,
+        name=name,
     )
     lname = name or f"{submodel.__name__}_list"
 

@@ -1,3 +1,5 @@
+import copy
+
 from tests.testmodels import Address, Employee, Event, JSONFields, Reporter, Team, Tournament
 from tortoise.contrib import test
 from tortoise.contrib.pydantic import pydantic_model_creator, pydantic_queryset_creator
@@ -11,6 +13,13 @@ class TestPydantic(test.TestCase):
         self.Team_Pydantic = pydantic_model_creator(Team)
         self.Address_Pydantic = pydantic_model_creator(Address)
 
+        class PydanticMetaOverride:
+            backward_relations = False
+
+        self.Event_Pydantic_non_backward = pydantic_model_creator(
+            Event, meta_override=PydanticMetaOverride, name="Event_non_backward"
+        )
+
         self.tournament = await Tournament.create(name="New Tournament")
         self.reporter = await Reporter.create(name="The Reporter")
         self.event = await Event.create(
@@ -23,6 +32,14 @@ class TestPydantic(test.TestCase):
         await self.event.participants.add(self.team1, self.team2)
         await self.event2.participants.add(self.team1, self.team2)
         self.maxDiff = None
+
+    async def test_backward_relations(self):
+        event_schema = copy.deepcopy(dict(self.Event_Pydantic.schema()))
+        event_non_backward_schema = copy.deepcopy(dict(self.Event_Pydantic_non_backward.schema()))
+        self.assertTrue("address" in event_schema["properties"])
+        self.assertFalse("address" in event_non_backward_schema["properties"])
+        del event_schema["properties"]["address"]
+        self.assertEqual(event_schema["properties"], event_non_backward_schema["properties"])
 
     def test_event_schema(self):
         self.assertEqual(
@@ -995,11 +1012,25 @@ class TestPydantic(test.TestCase):
         creator = pydantic_model_creator(JSONFields)
         ret0 = creator.from_orm(json_field_0_get).dict()
         self.assertEqual(
-            ret0, {"id": 1, "data": {"a": 1}, "data_null": None, "data_default": {"a": 1}}
+            ret0,
+            {
+                "id": 1,
+                "data": {"a": 1},
+                "data_null": None,
+                "data_default": {"a": 1},
+                "data_validate": None,
+            },
         )
         ret1 = creator.from_orm(json_field_1_get).dict()
         self.assertEqual(
-            ret1, {"id": 2, "data": [{"a": 1, "b": 2}], "data_null": None, "data_default": {"a": 1}}
+            ret1,
+            {
+                "id": 2,
+                "data": [{"a": 1, "b": 2}],
+                "data_null": None,
+                "data_default": {"a": 1},
+                "data_validate": None,
+            },
         )
 
 

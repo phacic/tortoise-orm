@@ -95,6 +95,7 @@ class TestDescribeModel(test.SimpleTestCase):
                 "python_type": "None",
                 "generated": False,
                 "nullable": False,
+                "on_delete": "CASCADE",
                 "unique": False,
                 "indexed": False,
                 "default": None,
@@ -115,6 +116,7 @@ class TestDescribeModel(test.SimpleTestCase):
                 "python_type": None,
                 "generated": False,
                 "nullable": False,
+                "on_delete": "CASCADE",
                 "unique": False,
                 "indexed": False,
                 "default": None,
@@ -133,7 +135,6 @@ class TestDescribeModel(test.SimpleTestCase):
 
     def test_describe_model_straight(self):
         val = StraightFields.describe()
-
         self.assertEqual(
             val,
             {
@@ -245,6 +246,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "generated": False,
                         "nullable": True,
                         "unique": False,
+                        "on_delete": "CASCADE",
                         "indexed": False,
                         "default": None,
                         "description": "Tree!",
@@ -277,6 +279,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "indexed": True,
                         "name": "o2o",
                         "nullable": True,
+                        "on_delete": "CASCADE",
                         "python_type": "models.StraightFields",
                         "raw_field": "o2o_id",
                         "unique": True,
@@ -311,6 +314,13 @@ class TestDescribeModel(test.SimpleTestCase):
                         "description": "M2M to myself",
                         "docstring": None,
                         "constraints": {},
+                        "model_name": "models.StraightFields",
+                        "related_name": "rel_from",
+                        "forward_key": "straightfields_id",
+                        "backward_key": "straightfields_rel_id",
+                        "through": "straightfields_straightfields",
+                        "on_delete": "CASCADE",
+                        "_generated": False,
                     },
                     {
                         "name": "rel_from",
@@ -324,6 +334,13 @@ class TestDescribeModel(test.SimpleTestCase):
                         "description": "M2M to myself",
                         "docstring": None,
                         "constraints": {},
+                        "model_name": "models.StraightFields",
+                        "related_name": "rel_to",
+                        "forward_key": "straightfields_rel_id",
+                        "backward_key": "straightfields_id",
+                        "through": "straightfields_straightfields",
+                        "on_delete": "CASCADE",
+                        "_generated": True,
                     },
                 ],
             },
@@ -331,7 +348,6 @@ class TestDescribeModel(test.SimpleTestCase):
 
     def test_describe_model_straight_native(self):
         val = StraightFields.describe(serializable=False)
-
         self.assertEqual(
             val,
             {
@@ -442,6 +458,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "python_type": StraightFields,
                         "generated": False,
                         "nullable": True,
+                        "on_delete": "CASCADE",
                         "unique": False,
                         "indexed": False,
                         "default": None,
@@ -475,6 +492,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "indexed": True,
                         "name": "o2o",
                         "nullable": True,
+                        "on_delete": "CASCADE",
                         "python_type": StraightFields,
                         "raw_field": "o2o_id",
                         "unique": True,
@@ -509,6 +527,13 @@ class TestDescribeModel(test.SimpleTestCase):
                         "description": "M2M to myself",
                         "docstring": None,
                         "constraints": {},
+                        "model_name": "models.StraightFields",
+                        "related_name": "rel_from",
+                        "forward_key": "straightfields_id",
+                        "backward_key": "straightfields_rel_id",
+                        "through": "straightfields_straightfields",
+                        "on_delete": "CASCADE",
+                        "_generated": False,
                     },
                     {
                         "name": "rel_from",
@@ -522,6 +547,13 @@ class TestDescribeModel(test.SimpleTestCase):
                         "description": "M2M to myself",
                         "docstring": None,
                         "constraints": {},
+                        "model_name": "models.StraightFields",
+                        "related_name": "rel_to",
+                        "forward_key": "straightfields_rel_id",
+                        "backward_key": "straightfields_id",
+                        "through": "straightfields_straightfields",
+                        "on_delete": "CASCADE",
+                        "_generated": True,
                     },
                 ],
             },
@@ -529,7 +561,6 @@ class TestDescribeModel(test.SimpleTestCase):
 
     def test_describe_model_source(self):
         val = SourceFields.describe()
-
         self.assertEqual(
             val,
             {
@@ -640,6 +671,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "python_type": "models.SourceFields",
                         "generated": False,
                         "nullable": True,
+                        "on_delete": "CASCADE",
                         "unique": False,
                         "indexed": False,
                         "default": None,
@@ -673,6 +705,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "indexed": True,
                         "name": "o2o",
                         "nullable": True,
+                        "on_delete": "CASCADE",
                         "python_type": "models.SourceFields",
                         "raw_field": "o2o_id",
                         "unique": True,
@@ -707,6 +740,13 @@ class TestDescribeModel(test.SimpleTestCase):
                         "description": "M2M to myself",
                         "docstring": None,
                         "constraints": {},
+                        "model_name": "models.SourceFields",
+                        "related_name": "rel_from",
+                        "forward_key": "sts_forward",
+                        "backward_key": "backward_sts",
+                        "through": "sometable_self",
+                        "on_delete": "CASCADE",
+                        "_generated": False,
                     },
                     {
                         "name": "rel_from",
@@ -720,6 +760,13 @@ class TestDescribeModel(test.SimpleTestCase):
                         "description": "M2M to myself",
                         "docstring": None,
                         "constraints": {},
+                        "model_name": "models.SourceFields",
+                        "related_name": "rel_to",
+                        "forward_key": "backward_sts",
+                        "backward_key": "sts_forward",
+                        "through": "sometable_self",
+                        "on_delete": "CASCADE",
+                        "_generated": True,
                     },
                 ],
             },
@@ -727,7 +774,6 @@ class TestDescribeModel(test.SimpleTestCase):
 
     def test_describe_model_source_native(self):
         val = SourceFields.describe(serializable=False)
-
         self.assertEqual(
             val,
             {
@@ -839,6 +885,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "generated": False,
                         "nullable": True,
                         "unique": False,
+                        "on_delete": "CASCADE",
                         "indexed": False,
                         "default": None,
                         "description": "Tree!",
@@ -871,6 +918,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "indexed": True,
                         "name": "o2o",
                         "nullable": True,
+                        "on_delete": "CASCADE",
                         "python_type": SourceFields,
                         "raw_field": "o2o_id",
                         "unique": True,
@@ -905,6 +953,13 @@ class TestDescribeModel(test.SimpleTestCase):
                         "description": "M2M to myself",
                         "docstring": None,
                         "constraints": {},
+                        "model_name": "models.SourceFields",
+                        "related_name": "rel_from",
+                        "forward_key": "sts_forward",
+                        "backward_key": "backward_sts",
+                        "through": "sometable_self",
+                        "on_delete": "CASCADE",
+                        "_generated": False,
                     },
                     {
                         "name": "rel_from",
@@ -918,6 +973,13 @@ class TestDescribeModel(test.SimpleTestCase):
                         "description": "M2M to myself",
                         "docstring": None,
                         "constraints": {},
+                        "model_name": "models.SourceFields",
+                        "related_name": "rel_to",
+                        "forward_key": "backward_sts",
+                        "backward_key": "sts_forward",
+                        "through": "sometable_self",
+                        "on_delete": "CASCADE",
+                        "_generated": True,
                     },
                 ],
             },
@@ -972,17 +1034,24 @@ class TestDescribeModel(test.SimpleTestCase):
                 "backward_o2o_fields": [],
                 "m2m_fields": [
                     {
-                        "name": "peers",
-                        "field_type": "ManyToManyFieldInstance",
-                        "python_type": "models.UUIDM2MRelatedModel",
-                        "generated": False,
-                        "nullable": False,
-                        "unique": False,
-                        "indexed": False,
+                        "_generated": True,
+                        "backward_key": "uuidpkmodel_id",
+                        "constraints": {},
                         "default": None,
                         "description": None,
                         "docstring": None,
-                        "constraints": {},
+                        "field_type": "ManyToManyFieldInstance",
+                        "forward_key": "uuidm2mrelatedmodel_id",
+                        "generated": False,
+                        "indexed": False,
+                        "model_name": "models.UUIDM2MRelatedModel",
+                        "name": "peers",
+                        "nullable": False,
+                        "on_delete": "CASCADE",
+                        "python_type": "models.UUIDM2MRelatedModel",
+                        "related_name": "models",
+                        "through": "uuidm2mrelatedmodel_uuidpkmodel",
+                        "unique": False,
                     }
                 ],
             },
@@ -990,7 +1059,6 @@ class TestDescribeModel(test.SimpleTestCase):
 
     def test_describe_model_uuidpk_native(self):
         val = UUIDPkModel.describe(serializable=False)
-
         self.assertEqual(
             val,
             {
@@ -1038,16 +1106,23 @@ class TestDescribeModel(test.SimpleTestCase):
                 "m2m_fields": [
                     {
                         "name": "peers",
-                        "field_type": ManyToManyFieldInstance,
-                        "python_type": UUIDM2MRelatedModel,
                         "generated": False,
                         "nullable": False,
+                        "field_type": ManyToManyFieldInstance,
+                        "python_type": UUIDM2MRelatedModel,
                         "unique": False,
                         "indexed": False,
                         "default": None,
                         "description": None,
                         "docstring": None,
                         "constraints": {},
+                        "model_name": "models.UUIDM2MRelatedModel",
+                        "related_name": "models",
+                        "forward_key": "uuidm2mrelatedmodel_id",
+                        "backward_key": "uuidpkmodel_id",
+                        "through": "uuidm2mrelatedmodel_uuidpkmodel",
+                        "on_delete": "CASCADE",
+                        "_generated": True,
                     }
                 ],
             },
@@ -1122,6 +1197,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "indexed": False,
                         "name": "model",
                         "nullable": True,
+                        "on_delete": "CASCADE",
                         "python_type": "models.UUIDPkModel",
                         "raw_field": "model_id",
                         "unique": False,
@@ -1140,6 +1216,7 @@ class TestDescribeModel(test.SimpleTestCase):
                         "indexed": True,
                         "name": "parent",
                         "nullable": True,
+                        "on_delete": "CASCADE",
                         "python_type": "models.UUIDPkModel",
                         "raw_field": "parent_id",
                         "unique": True,
@@ -1240,6 +1317,21 @@ class TestDescribeModel(test.SimpleTestCase):
                         "docstring": None,
                         "constraints": {},
                     },
+                    {
+                        "name": "data_validate",
+                        "field_type": "JSONField",
+                        "db_column": "data_validate",
+                        "db_field_types": {"": "TEXT", "postgres": "JSONB"},
+                        "python_type": "Union[dict, list]",
+                        "generated": False,
+                        "nullable": True,
+                        "unique": False,
+                        "indexed": False,
+                        "default": None,
+                        "description": None,
+                        "docstring": None,
+                        "constraints": {},
+                    },
                 ],
                 "fk_fields": [],
                 "backward_fk_fields": [],
@@ -1319,6 +1411,21 @@ class TestDescribeModel(test.SimpleTestCase):
                         "unique": False,
                         "indexed": False,
                         "default": {"a": 1},
+                        "description": None,
+                        "docstring": None,
+                        "constraints": {},
+                    },
+                    {
+                        "name": "data_validate",
+                        "field_type": fields.JSONField,
+                        "db_column": "data_validate",
+                        "db_field_types": {"": "TEXT", "postgres": "JSONB"},
+                        "python_type": Union[dict, list],
+                        "generated": False,
+                        "nullable": True,
+                        "unique": False,
+                        "indexed": False,
+                        "default": None,
                         "description": None,
                         "docstring": None,
                         "constraints": {},

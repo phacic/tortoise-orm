@@ -1,6 +1,6 @@
 from tests.testmodels import Author, Book
 from tortoise.contrib import test
-from tortoise.functions import Avg, Count, Sum
+from tortoise.functions import Avg, Count, Sum, Upper
 
 
 class TestGroupBy(test.TestCase):
@@ -33,7 +33,7 @@ class TestGroupBy(test.TestCase):
             .group_by("author__name")
             .values("author__name", "count")
         )
-        self.assertEqual(
+        self.assertListSortEqual(
             ret, [{"author__name": "author1", "count": 10}, {"author__name": "author2", "count": 5}]
         )
 
@@ -65,7 +65,7 @@ class TestGroupBy(test.TestCase):
             .group_by("author__name")
             .values("author__name", "sum")
         )
-        self.assertEqual(
+        self.assertListSortEqual(
             ret,
             [{"author__name": "author1", "sum": 45.0}, {"author__name": "author2", "sum": 10.0}],
         )
@@ -99,7 +99,7 @@ class TestGroupBy(test.TestCase):
             .group_by("author__name")
             .values("author__name", "avg")
         )
-        self.assertEqual(
+        self.assertListSortEqual(
             ret, [{"author__name": "author1", "avg": 4.5}, {"author__name": "author2", "avg": 2}]
         )
 
@@ -134,7 +134,7 @@ class TestGroupBy(test.TestCase):
             .group_by("author__name")
             .values_list("author__name", "count")
         )
-        self.assertEqual(ret, [("author1", 10), ("author2", 5)])
+        self.assertListSortEqual(ret, [("author1", 10), ("author2", 5)])
 
     async def test_count_values_list_filter_group_by(self):
         ret = (
@@ -166,7 +166,7 @@ class TestGroupBy(test.TestCase):
             .group_by("author__name")
             .values_list("author__name", "sum")
         )
-        self.assertEqual(ret, [("author1", 45.0), ("author2", 10.0)])
+        self.assertListSortEqual(ret, [("author1", 45.0), ("author2", 10.0)])
 
     async def test_sum_values_list_filter_group_by(self):
         ret = (
@@ -199,7 +199,7 @@ class TestGroupBy(test.TestCase):
             .group_by("author__name")
             .values_list("author__name", "avg")
         )
-        self.assertEqual(ret, [("author1", 4.5), ("author2", 2.0)])
+        self.assertListSortEqual(ret, [("author1", 4.5), ("author2", 2.0)])
 
     async def test_avg_values_list_filter_group_by(self):
         ret = (
@@ -214,3 +214,13 @@ class TestGroupBy(test.TestCase):
     async def test_implicit_group_by(self):
         ret = await Author.annotate(count=Count("books")).filter(count__gt=6)
         self.assertEqual(ret[0].count, 10)
+
+    async def test_group_by_annotate_result(self):
+        ret = (
+            await Book.annotate(upper_name=Upper("author__name"), count=Count("id"))
+            .group_by("upper_name")
+            .values("upper_name", "count")
+        )
+        self.assertListSortEqual(
+            ret, [{"upper_name": "AUTHOR1", "count": 10}, {"upper_name": "AUTHOR2", "count": 5}]
+        )

@@ -10,8 +10,8 @@ Tortoise ORM
    :target: http://tortoise-orm.readthedocs.io/en/latest/
 .. image:: https://pepy.tech/badge/tortoise-orm/month
    :target: https://pepy.tech/project/tortoise-orm/month
-.. image:: https://travis-ci.com/tortoise/tortoise-orm.svg?branch=master
-   :target: https://travis-ci.com/tortoise/tortoise-orm
+.. image:: https://github.com/tortoise/tortoise-orm/workflows/ci/badge.svg
+   :target: https://github.com/tortoise/tortoise-orm/actions?query=workflow:ci
 .. image:: https://coveralls.io/repos/github/tortoise/tortoise-orm/badge.svg
    :target: https://coveralls.io/github/tortoise/tortoise-orm
 .. image:: https://api.codacy.com/project/badge/Grade/b5b77021ba284e4a9e0c033a4611b046
@@ -71,12 +71,24 @@ First you have to install tortoise like this:
 
     pip install tortoise-orm
 
-Then you should install your db driver
+You can also install with your db driver (`aiosqlite` is builtin):
 
 .. code-block:: bash
 
-    pip install asyncpg aiosqlite aiomysql
+    pip install tortoise-orm[asyncpg]
 
+
+Or for MySQL:
+
+.. code-block:: bash
+
+    pip install tortoise-orm[aiomysql]
+
+Or another asyncio MySQL driver `asyncmy <https://github.com/long2ice/asyncmy>`_:
+
+.. code-block:: bash
+
+    pip install tortoise-orm[asyncmy]
 
 Quick Tutorial
 --------------
@@ -196,7 +208,7 @@ After that you can start using your models:
 Migration
 =========
 
-Please have a look at `aerich <https://github.com/tortoise/aerich>`_
+Tortoise ORM use `Aerich <https://github.com/tortoise/aerich>`_ as database migrations tool, see more detail at it's `docs <https://github.com/tortoise/aerich>`_.
 
 Contributing
 ============

@@ -14,11 +14,27 @@ First you have to install tortoise like this:
 
 ..
 
-Then you should install your db driver
+You can also install with your db driver:
 
 .. code-block:: bash
 
-    pip install asyncpg
+    pip install tortoise-orm[asyncpg]
+
+..
+
+Or MySQL:
+
+.. code-block:: bash
+
+    pip install tortoise-orm[aiomysql]
+
+..
+
+Or another driver `asyncmy <https://github.com/long2ice/asyncmy>`_ for MySQL:
+
+.. code-block:: bash
+
+    pip install tortoise-orm[asyncmy]
 
 ..
 
@@ -36,6 +52,14 @@ The following libraries can be used as accelerators:
   If you use a framework, it may already use it.
 * `ciso8601 <https://pypi.org/project/ciso8601/>`_: Automatically used if installed.
   Not automatically installed on Windows due to often a lack of a C compiler. Default on Linux/CPython.
+
+You can install with all accelerators above:
+
+.. code-block:: bash
+
+    pip install tortoise-orm[accel]
+
+..
 
 Tutorial
 ========

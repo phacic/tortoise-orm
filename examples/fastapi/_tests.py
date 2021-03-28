@@ -1,13 +1,13 @@
 # mypy: no-disallow-untyped-decorators
-# pylint: disable=E0611
+# pylint: disable=E0611,E0401
 import asyncio
 from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-
 from main import app
 from models import Users
+
 from tortoise.contrib.test import finalizer, initializer
 
 

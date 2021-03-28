@@ -20,6 +20,7 @@ from tortoise.exceptions import (
     MultipleObjectsReturned,
     OperationalError,
     ParamsError,
+    ValidationError,
 )
 from tortoise.expressions import F
 from tortoise.models import NoneAwaitable
@@ -77,7 +78,7 @@ class TestModelCreate(test.TestCase):
     async def test_implicit_clone_pk_required_none(self):
         mdl = await RequiredPKModel.create(id="A", name="name_a")
         mdl.pk = None
-        with self.assertRaises(IntegrityError):
+        with self.assertRaises(ValidationError):
             await mdl.save()
 
 
@@ -159,6 +160,16 @@ class TestModelMethods(test.TestCase):
         mdl2 = await self.cls.get(name="Test2")
         self.assertEqual(mdl, mdl2)
 
+    async def test_update_or_create(self):
+        mdl, created = await self.cls.update_or_create(name="Test")
+        self.assertFalse(created)
+        self.assertEqual(self.mdl, mdl)
+        mdl, created = await self.cls.update_or_create(name="Test2")
+        self.assertTrue(created)
+        self.assertNotEqual(self.mdl, mdl)
+        mdl2 = await self.cls.get(name="Test2")
+        self.assertEqual(mdl, mdl2)
+
     async def test_first(self):
         mdl = await self.cls.first()
         self.assertEqual(self.mdl.id, mdl.id)
@@ -223,10 +234,10 @@ class TestModelMethods(test.TestCase):
         self.assertNotEqual(orig_modified, evt1.modified)
 
         with self.assertRaises(ConfigurationError):
-            evt2.update_from_dict({"participants": []})
+            await evt2.update_from_dict({"participants": []})
 
         with self.assertRaises(ValueError):
-            evt2.update_from_dict({"alias": "foo"})
+            await evt2.update_from_dict({"alias": "foo"})
 
     async def test_index_access(self):
         obj = await self.cls[self.mdl.pk]

@@ -1,10 +1,10 @@
-# pylint: disable=E0611
+# pylint: disable=E0611,E0401
 from typing import List
 
 from fastapi import FastAPI, HTTPException
+from models import User_Pydantic, UserIn_Pydantic, Users
 from pydantic import BaseModel
 
-from models import User_Pydantic, UserIn_Pydantic, Users
 from tortoise.contrib.fastapi import HTTPNotFoundError, register_tortoise
 
 app = FastAPI(title="Tortoise ORM FastAPI example")

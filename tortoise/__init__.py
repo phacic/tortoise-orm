@@ -7,7 +7,8 @@ import warnings
 from contextvars import ContextVar
 from copy import deepcopy
 from inspect import isclass
-from typing import Coroutine, Dict, List, Optional, Tuple, Type, cast
+from types import ModuleType
+from typing import Coroutine, Dict, Iterable, List, Optional, Tuple, Type, Union, cast
 
 from pypika import Table
 
@@ -23,7 +24,6 @@ from tortoise.fields.relational import (
 )
 from tortoise.filters import get_m2m_filters
 from tortoise.models import Model
-from tortoise.queryset import QuerySet
 from tortoise.transactions import current_transaction_map
 from tortoise.utils import generate_schema_for_client
 
@@ -31,7 +31,7 @@ logger = logging.getLogger("tortoise")
 
 
 class Tortoise:
-    apps: Dict[str, Dict[str, Type[Model]]] = {}
+    apps: Dict[str, Dict[str, Type["Model"]]] = {}
     _connections: Dict[str, BaseDBAsyncClient] = {}
     _inited: bool = False
 
@@ -46,7 +46,7 @@ class Tortoise:
 
     @classmethod
     def describe_model(
-        cls, model: Type[Model], serializable: bool = True
+        cls, model: Type["Model"], serializable: bool = True
     ) -> dict:  # pragma: nocoverage
         """
         Describes the given list of models or ALL registered models.
@@ -72,7 +72,7 @@ class Tortoise:
 
     @classmethod
     def describe_models(
-        cls, models: Optional[List[Type[Model]]] = None, serializable: bool = True
+        cls, models: Optional[List[Type["Model"]]] = None, serializable: bool = True
     ) -> Dict[str, dict]:
         """
         Describes the given list of models or ALL registered models.
@@ -108,7 +108,7 @@ class Tortoise:
 
     @classmethod
     def _init_relations(cls) -> None:
-        def get_related_model(related_app_name: str, related_model_name: str) -> Type[Model]:
+        def get_related_model(related_app_name: str, related_model_name: str) -> Type["Model"]:
             """
             Test, if app and model really exist. Throws a ConfigurationError with a hopefully
             helpful message. If successfull, returns the requested model.
@@ -348,11 +348,16 @@ class Tortoise:
         return client_class
 
     @classmethod
-    def _discover_models(cls, models_path: str, app_label: str) -> List[Type[Model]]:
-        try:
-            module = importlib.import_module(models_path)
-        except ImportError:
-            raise ConfigurationError(f'Module "{models_path}" not found')
+    def _discover_models(
+        cls, models_path: Union[ModuleType, str], app_label: str
+    ) -> List[Type["Model"]]:
+        if isinstance(models_path, ModuleType):
+            module = models_path
+        else:
+            try:
+                module = importlib.import_module(models_path)
+            except ImportError:
+                raise ConfigurationError(f'Module "{models_path}" not found')
         discovered_models = []
         possible_models = getattr(module, "__models__", None)
         try:
@@ -388,7 +393,10 @@ class Tortoise:
 
     @classmethod
     def init_models(
-        cls, models_paths: List[str], app_label: str, _init_relations: bool = True
+        cls,
+        models_paths: Iterable[Union[ModuleType, str]],
+        app_label: str,
+        _init_relations: bool = True,
     ) -> None:
         """
         Early initialisation of Tortoise ORM Models.
@@ -396,14 +404,15 @@ class Tortoise:
         Initialise the relationships between Models.
         This does not initialise any database connection.
 
-        :param models_paths: A list of model paths to initialise
+        :param models_paths: Models paths to initialise
         :param app_label: The app label, e.g. 'models'
+        :param _init_relations: Whether to init relations or not
 
         :raises ConfigurationError: If models are invalid.
         """
         app_models: List[Type[Model]] = []
-        for module in models_paths:
-            app_models += cls._discover_models(module, app_label)
+        for models_path in models_paths:
+            app_models += cls._discover_models(models_path, app_label)
 
         cls.apps[app_label] = {model.__name__: model for model in app_models}
 
@@ -466,7 +475,10 @@ class Tortoise:
         config_file: Optional[str] = None,
         _create_db: bool = False,
         db_url: Optional[str] = None,
-        modules: Optional[Dict[str, List[str]]] = None,
+        modules: Optional[Dict[str, Iterable[Union[str, ModuleType]]]] = None,
+        use_tz: bool = False,
+        timezone: str = "UTC",
+        routers: Optional[List[Union[str, Type]]] = None,
     ) -> None:
         """
         Sets up Tortoise-ORM.
@@ -495,15 +507,18 @@ class Tortoise:
                                 }
                             },
                             # Using a DB_URL string
-                            'default': 'postgres://postgres:qwerty123@localhost:5432/events'
+                            'default': 'postgres://postgres:qwerty123@localhost:5432/test'
                         },
                         'apps': {
-                            'models': {
+                            'my_app': {
                                 'models': ['__main__'],
                                 # If no default_connection specified, defaults to 'default'
                                 'default_connection': 'default',
                             }
-                        }
+                        },
+                        'routers': ['path.router1', 'path.router2'],
+                        'use_tz': False,
+                        'timezone': 'UTC'
                     }
 
         :param config_file:
@@ -517,6 +532,12 @@ class Tortoise:
         :param _create_db:
             If ``True`` tries to create database for specified connections,
             could be used for testing purposes.
+        :param use_tz:
+            A boolean that specifies if datetime will be timezone-aware by default or not.
+        :param timezone:
+            Timezone to use, default is UTC.
+        :param routers:
+            A list of db routers str path or module.
 
         :raises ConfigurationError: For any configuration error
         """
@@ -546,16 +567,58 @@ class Tortoise:
         except KeyError:
             raise ConfigurationError('Config must define "apps" section')
 
-        logger.info(
+        use_tz = config.get("use_tz", use_tz)  # type: ignore
+        timezone = config.get("timezone", timezone)  # type: ignore
+        routers = config.get("routers", routers)  # type: ignore
+
+        # Mask passwords in logs output
+        passwords = []
+        for name, info in connections_config.items():
+            if isinstance(info, str):
+                info = expand_db_url(info)
+            password = info.get("credentials", {}).get("password")
+            if password:
+                passwords.append(password)
+
+        str_connection_config = str(connections_config)
+        for password in passwords:
+            str_connection_config = str_connection_config.replace(
+                password,
+                # Show one third of the password at beginning (may be better for debugging purposes)
+                f"{password[0:len(password) // 3]}***",
+            )
+
+        logger.debug(
             "Tortoise-ORM startup\n    connections: %s\n    apps: %s",
-            str(connections_config),
+            str_connection_config,
             str(apps_config),
         )
 
+        cls._init_timezone(use_tz, timezone)
         await cls._init_connections(connections_config, _create_db)
         cls._init_apps(apps_config)
+        cls._init_routers(routers)
 
         cls._inited = True
+
+    @classmethod
+    def _init_routers(cls, routers: Optional[List[Union[str, type]]] = None):
+        from tortoise.router import router
+
+        routers = routers or []
+        router_cls = []
+        for r in routers:
+            if isinstance(r, str):
+                try:
+                    module_name, class_name = r.rsplit(".", 2)
+                    router_cls.append(getattr(importlib.import_module(module_name), class_name))
+                except Exception:
+                    raise ConfigurationError(f"Can't import router from `{r}`")
+            elif isinstance(r, type):
+                router_cls.append(r)
+            else:
+                raise ConfigurationError("Router must be either str or type")
+        router.init_routers(router_cls)
 
     @classmethod
     async def close_connections(cls) -> None:
@@ -566,8 +629,10 @@ class Tortoise:
         else your event loop may never complete
         as it is waiting for the connections to die.
         """
+        tasks = []
         for connection in cls._connections.values():
-            await connection.close()
+            tasks.append(connection.close())
+        await asyncio.gather(*tasks)
         cls._connections = {}
         logger.info("Tortoise-ORM shutdown")
 
@@ -611,6 +676,11 @@ class Tortoise:
         cls._connections = {}
         await cls._reset_apps()
 
+    @classmethod
+    def _init_timezone(cls, use_tz: bool, timezone: str) -> None:
+        os.environ["USE_TZ"] = str(use_tz)
+        os.environ["TIMEZONE"] = timezone
+
 
 def run_async(coro: Coroutine) -> None:
     """
@@ -638,4 +708,4 @@ def run_async(coro: Coroutine) -> None:
         loop.run_until_complete(Tortoise.close_connections())
 
 
-__version__ = "0.16.16"
+__version__ = "0.17.1"

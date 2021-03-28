@@ -4,13 +4,22 @@ This is the testing Models
 import binascii
 import datetime
 import os
+import re
 import uuid
 from decimal import Decimal
 from enum import Enum, IntEnum
+from typing import Union
 
 from tortoise import fields
-from tortoise.exceptions import NoValuesFetched
+from tortoise.exceptions import NoValuesFetched, ValidationError
+from tortoise.manager import Manager
 from tortoise.models import Model
+from tortoise.validators import (
+    CommaSeparatedIntegerListValidator,
+    RegexValidator,
+    validate_ipv4_address,
+    validate_ipv6_address,
+)
 
 
 def generate_token():
@@ -90,6 +99,15 @@ class Event(Model):
 
     def __str__(self):
         return self.name
+
+
+class Node(Model):
+    name = fields.CharField(max_length=10)
+
+
+class Tree(Model):
+    parent = fields.ForeignKeyField("models.Node", related_name="parent_trees")
+    child = fields.ForeignKeyField("models.Node", related_name="children_trees")
 
 
 class Address(Model):
@@ -241,10 +259,16 @@ class JSONFields(Model):
     This model contains many JSON blobs
     """
 
+    @staticmethod
+    def dict_or_list(value: Union[dict, list]):
+        if not isinstance(value, (dict, list)):
+            raise ValidationError("Value must be a dict or list.")
+
     id = fields.IntField(pk=True)
     data = fields.JSONField()
     data_null = fields.JSONField(null=True)
     data_default = fields.JSONField(default={"a": 1})
+    data_validate = fields.JSONField(null=True, validators=[lambda v: JSONFields.dict_or_list(v)])
 
 
 class UUIDFields(Model):
@@ -686,11 +710,36 @@ class DefaultModel(Model):
     bool_default = fields.BooleanField(default=True)
     char_default = fields.CharField(max_length=20, default="tortoise")
     date_default = fields.DateField(default=datetime.date.fromisoformat("2020-05-20"))
-    datetime_default = fields.DatetimeField(
-        default=datetime.datetime.fromisoformat("2020-05-20 00:00:00")
-    )
+    datetime_default = fields.DatetimeField(default=datetime.datetime(year=2020, month=5, day=20))
 
 
 class RequiredPKModel(Model):
     id = fields.CharField(pk=True, max_length=100)
     name = fields.CharField(max_length=255)
+
+
+class ValidatorModel(Model):
+    regex = fields.CharField(max_length=100, null=True, validators=[RegexValidator("abc.+", re.I)])
+    max_length = fields.CharField(max_length=5, null=True)
+    ipv4 = fields.CharField(max_length=100, null=True, validators=[validate_ipv4_address])
+    ipv6 = fields.CharField(max_length=100, null=True, validators=[validate_ipv6_address])
+    comma_separated_integer_list = fields.CharField(
+        max_length=100, null=True, validators=[CommaSeparatedIntegerListValidator()]
+    )
+
+
+class NumberSourceField(Model):
+    number = fields.IntField(source_field="counter", default=0)
+
+
+class StatusManager(Manager):
+    def get_queryset(self):
+        return super(StatusManager, self).get_queryset().filter(status=1)
+
+
+class ManagerModel(Model):
+    status = fields.IntField(default=0)
+    all_objects = Manager()
+
+    class Meta:
+        manager = StatusManager()

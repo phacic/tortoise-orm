@@ -264,8 +264,26 @@ When using ``.filter()`` method you can use number of modifiers to field names t
 - ``istartswith`` - case insensitive ``startswith``
 - ``endswith`` - if field ends with value
 - ``iendswith`` - case insensitive ``endswith``
-- ``iequals`` - case insensitive equals
+- ``iexact`` - case insensitive equals
 
+Specially, you can filter date part with one of following, note that current only support PostgreSQL and MySQL, but not sqlite:
+
+.. code-block:: python3
+
+    class DatePart(Enum):
+        year = "YEAR"
+        quarter = "QUARTER"
+        month = "MONTH"
+        week = "WEEK"
+        day = "DAY"
+        hour = "HOUR"
+        minute = "MINUTE"
+        second = "SECOND"
+        microsecond = "MICROSECOND"
+
+    teams = await Team.filter(created_at__year=2020)
+    teams = await Team.filter(created_at__month=12)
+    teams = await Team.filter(created_at__day=5)
 
 Complex prefetch
 ================
@@ -282,22 +300,3 @@ You can view full example here:  :ref:`example_prefetching`
 
 .. autoclass:: tortoise.query_utils.Prefetch
     :members:
-
-
-F expression
-================
-
-An F() object represents the value of a model field. It makes it possible to refer to model field values and perform database operations using them without actually having to pull them out of the database into Python memory.
-
-For example to use ``F`` to update user balance atomic:
-
-.. code-block:: python3
-
-    from tortoise.expressions import F
-    await User.filter(id=1).update(balance = F('balance') - 10)
-    await User.filter(id=1).update(balance = F('balance') + F('award'), award = 0)
-
-    # or use .save()
-    user = await User.get(id=1)
-    user.balance = F('balance') - 10
-    await user.save(update_fields=['balance'])

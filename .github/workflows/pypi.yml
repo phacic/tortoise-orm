@@ -5,17 +5,20 @@ on:
       - created
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v1
         with:
           python-version: '3.x'
-      - uses: dschep/install-poetry-action@v1.3
+      - name: Install and configure Poetry
+        uses: snok/install-poetry@v1.1.1
+        with:
+          virtualenvs-create: false
       - name: Install requirements
         run: make deps
       - name: Build dists
-        run: python setup.py sdist
+        run: make build
       - name: Pypi Publish
         uses: pypa/gh-action-pypi-publish@master
         with:

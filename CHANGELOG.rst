@@ -7,11 +7,60 @@ Changelog
 
 .. rst-class:: emphasize-children
 
+0.17
+====
+0.17.1
+------
+- Fix type for modules.
+- Fix `select_related` when related model specified more than once. (#679)
+- Add `__iter__` to model, now can just return model/models in `fastapi` response.
+- Fix `in_transaction` bug caused by 'router'. (#677) (#678)
+
+0.17.0
+-------
+- Add date part extract filtering.
+- Add `Manager` support.
+- Add db router support.
+- Add `nowait`, `skip_locked`, `of` parameters to `queryset.select_for_update`.
+- Add field name to validation exceptions.
+- Compatible with `asyncmy <https://github.com/long2ice/asyncmy>`_.
+- Replace pypika to `pypika-tortoise <https://github.com/tortoise/pypika-tortoise>`_.
+
 0.16
 ====
+0.16.21
+-------
+- Fixed validating JSON before decoding. (#623)
+- Add model method `update_or_create`.
+- Add `batch_size` parameter for `bulk_create` method.
+- Fix save with F expression and field with source_field.
+
+0.16.20
+-------
+- Add model field validators.
+- Allow function results in group by. (#608)
+
+0.16.19
+-------
+- Replace set `TZ` environment variable to `TIMEZONE` to avoid affecting global timezone.
+- Allow passing module objects to `models_paths` param of `Tortoise.init_models()`. (#561)
+- Implement `PydanticMeta.backward_relations`. (#536)
+- Allow overriding `PydanticMeta` in `PydanticModelCreator`. (#536)
+- Fixed make_native typo to make_naive in timezone module
+
+0.16.18
+-------
+- Support custom function in update. (#537)
+- Add `Model.refresh_from_db`. (#549)
+- Add timezone support, **be careful to upgrade to this version**, see `docs <https://tortoise-orm.readthedocs.io/en/latest/timezone.html>`_ for details. (#335)
+- Remove `aerich` in case of cyclic dependency. (#558)
+
 0.16.17
 -------
-- Add `on_delete` in `ManyToManyField`.
+- Add `on_delete` in `ManyToManyField`. (#508)
+- Support `F` expression in `annotate`. (#475)
+- Fix `QuerySet.select_related` in case of join same table twice. (#525)
+- Integrate Aerich into the install. (#530)
 
 0.16.16
 -------

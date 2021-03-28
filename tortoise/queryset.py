@@ -41,8 +41,10 @@ from tortoise.fields.relational import (
 )
 from tortoise.functions import Function
 from tortoise.query_utils import Prefetch, Q, QueryModifier, _get_joins_for_related_field
+from tortoise.router import router
 
 # Empty placeholder - Should never be edited.
+
 QUERY: QueryBuilder = QueryBuilder()
 
 if TYPE_CHECKING:  # pragma: nocoverage
@@ -87,6 +89,20 @@ class AwaitableQuery(Generic[MODEL]):
         self._db: BaseDBAsyncClient = None  # type: ignore
         self.capabilities: Capabilities = model._meta.db.capabilities
         self._annotations: Dict[str, Function] = {}
+
+    def _choose_db(self, for_write: bool = False) -> BaseDBAsyncClient:
+        """
+        Return the connection that will be used if this query is executed now.
+
+        :return: BaseDBAsyncClient:
+        """
+        if self._db:
+            return self._db
+        if for_write:
+            db = router.db_for_write(self.model)
+        else:
+            db = router.db_for_read(self.model)
+        return db or self.model._meta.db
 
     def resolve_filters(
         self,
@@ -184,8 +200,11 @@ class AwaitableQuery(Generic[MODEL]):
                 )
             elif field_name in annotations:
                 annotation = annotations[field_name]
-                annotation_info = annotation.resolve(self.model, table)
-                self.query = self.query.orderby(annotation_info["field"], order=ordering[1])
+                if isinstance(annotation, Term):
+                    self.query = self.query.orderby(annotation, order=ordering[1])
+                else:
+                    annotation_info = annotation.resolve(self.model, table)
+                    self.query = self.query.orderby(annotation_info["field"], order=ordering[1])
             else:
                 field_object = model._meta.fields_map.get(field_name)
 
@@ -209,7 +228,10 @@ class AwaitableQuery(Generic[MODEL]):
         table = self.model._meta.basetable
         annotation_info = {}
         for key, annotation in self._annotations.items():
-            annotation_info[key] = annotation.resolve(self.model, table)
+            if isinstance(annotation, Term):
+                annotation_info[key] = {"joins": [], "field": annotation}
+            else:
+                annotation_info[key] = annotation.resolve(self.model, table)
 
         for key, info in annotation_info.items():
             for join in info["joins"]:
@@ -219,8 +241,7 @@ class AwaitableQuery(Generic[MODEL]):
         return any(info["field"].is_aggregate for info in annotation_info.values())
 
     def sql(self) -> str:
-        """Return the actual SQL.
-        """
+        """Return the actual SQL."""
         self._make_query()
         return self.query.get_sql()
 
@@ -250,6 +271,9 @@ class QuerySet(AwaitableQuery[MODEL]):
         "_custom_filters",
         "_group_bys",
         "_select_for_update",
+        "_select_for_update_nowait",
+        "_select_for_update_skip_locked",
+        "_select_for_update_of",
         "_select_related",
         "_select_related_idx",
     )
@@ -272,6 +296,9 @@ class QuerySet(AwaitableQuery[MODEL]):
         self._fields_for_select: Tuple[str, ...] = ()
         self._group_bys: Tuple[str, ...] = ()
         self._select_for_update: bool = False
+        self._select_for_update_nowait: bool = False
+        self._select_for_update_skip_locked: bool = False
+        self._select_for_update_of: Set[str] = set()
         self._select_related: Set[str] = set()
         self._select_related_idx: List[
             Tuple["Type[Model]", int, str, "Type[Model]"]
@@ -301,6 +328,9 @@ class QuerySet(AwaitableQuery[MODEL]):
         queryset._custom_filters = copy(self._custom_filters)
         queryset._group_bys = copy(self._group_bys)
         queryset._select_for_update = self._select_for_update
+        queryset._select_for_update_nowait = self._select_for_update_nowait
+        queryset._select_for_update_skip_locked = self._select_for_update_skip_locked
+        queryset._select_for_update_of = self._select_for_update_of
         queryset._select_related = self._select_related
         queryset._select_related_idx = self._select_related_idx
         return queryset
@@ -406,7 +436,9 @@ class QuerySet(AwaitableQuery[MODEL]):
         queryset._distinct = True
         return queryset
 
-    def select_for_update(self) -> "QuerySet[MODEL]":
+    def select_for_update(
+        self, nowait: bool = False, skip_locked: bool = False, of: Tuple[str, ...] = ()
+    ) -> "QuerySet[MODEL]":
         """
         Make QuerySet select for update.
 
@@ -416,10 +448,13 @@ class QuerySet(AwaitableQuery[MODEL]):
         if self.capabilities.support_for_update:
             queryset = self._clone()
             queryset._select_for_update = True
+            queryset._select_for_update_nowait = nowait
+            queryset._select_for_update_skip_locked = skip_locked
+            queryset._select_for_update_of = set(of)
             return queryset
         return self
 
-    def annotate(self, **kwargs: Function) -> "QuerySet[MODEL]":
+    def annotate(self, **kwargs: Union[Function, Term]) -> "QuerySet[MODEL]":
         """
         Annotate result with aggregation or function result.
 
@@ -429,8 +464,8 @@ class QuerySet(AwaitableQuery[MODEL]):
 
         queryset = self._clone()
         for key, annotation in kwargs.items():
-            if not isinstance(annotation, Function):
-                raise TypeError("value is expected to be Function instance")
+            if not isinstance(annotation, (Function, Term)):
+                raise TypeError("value is expected to be Function/Term instance")
             queryset._annotations[key] = annotation
             queryset._custom_filters.update(get_filters_for_field(key, None, key))
         return queryset
@@ -694,7 +729,7 @@ class QuerySet(AwaitableQuery[MODEL]):
             **The output format may (and will) vary greatly depending on the database backend.**
         """
         if self._db is None:
-            self._db = self.model._meta.db  # type: ignore
+            self._db = self._choose_db()  # type: ignore
         self._make_query()
         return await self._db.executor_class(model=self.model, db=self._db).execute_explain(
             self.query
@@ -721,12 +756,12 @@ class QuerySet(AwaitableQuery[MODEL]):
 
         table = self._join_table_by_field(table, field, field_object)
         related_fields = field_object.related_model._meta.db_fields
-        self._select_related_idx.append(
-            (field_object.related_model, len(related_fields), field, model)
-        )
+        append_item = (field_object.related_model, len(related_fields), field, model)
+        if append_item not in self._select_related_idx:
+            self._select_related_idx.append(append_item)
         for related_field in related_fields:
             self.query = self.query.select(
-                table[related_field].as_(f"{table._table_name}.{related_field}")
+                table[related_field].as_(f"{table.get_table_name()}.{related_field}")
             )
         if forwarded_fields:
             forwarded_fields_split = forwarded_fields.split("__")
@@ -743,9 +778,9 @@ class QuerySet(AwaitableQuery[MODEL]):
         self._select_related_idx = []
         table = self.model._meta.basetable
         if self._fields_for_select:
-            self._select_related_idx.append(
-                (self.model, len(self._fields_for_select), table, self.model)
-            )
+            append_item = (self.model, len(self._fields_for_select), table, self.model)
+            if append_item not in self._select_related_idx:
+                self._select_related_idx.append(append_item)
             db_fields_for_select = [
                 table[self.model._meta.fields_db_projection[field]].as_(field)
                 for field in self._fields_for_select
@@ -753,9 +788,9 @@ class QuerySet(AwaitableQuery[MODEL]):
             self.query = copy(self.model._meta.basequery).select(*db_fields_for_select)
         else:
             self.query = copy(self.model._meta.basequery_all_fields)
-            self._select_related_idx.append(
-                (self.model, len(self.model._meta.db_fields), table, self.model)
-            )
+            append_item = (self.model, len(self.model._meta.db_fields), table, self.model)
+            if append_item not in self._select_related_idx:
+                self._select_related_idx.append(append_item)
         self.resolve_ordering(
             self.model, self.model._meta.basetable, self._orderings, self._annotations
         )
@@ -772,7 +807,11 @@ class QuerySet(AwaitableQuery[MODEL]):
         if self._distinct:
             self.query._distinct = True
         if self._select_for_update:
-            self.query._for_update = True
+            self.query = self.query.for_update(
+                self._select_for_update_nowait,
+                self._select_for_update_skip_locked,
+                self._select_for_update_of,
+            )
         if self._select_related:
             for field in self._select_related:
                 field_split = field.split("__")
@@ -785,7 +824,7 @@ class QuerySet(AwaitableQuery[MODEL]):
 
     def __await__(self) -> Generator[Any, None, List[MODEL]]:
         if self._db is None:
-            self._db = self.model._meta.db  # type: ignore
+            self._db = self._choose_db(self._select_for_update)  # type: ignore
         self._make_query()
         return self._execute().__await__()
 
@@ -871,7 +910,7 @@ class UpdateQuery(AwaitableQuery):
 
     def __await__(self) -> Generator[Any, None, int]:
         if self._db is None:
-            self._db = self.model._meta.db  # type: ignore
+            self._db = self._choose_db(True)  # type: ignore
         self._make_query()
         return self._execute().__await__()
 
@@ -908,7 +947,7 @@ class DeleteQuery(AwaitableQuery):
 
     def __await__(self) -> Generator[Any, None, int]:
         if self._db is None:
-            self._db = self.model._meta.db  # type: ignore
+            self._db = self._choose_db(True)  # type: ignore
         self._make_query()
         return self._execute().__await__()
 
@@ -946,7 +985,7 @@ class ExistsQuery(AwaitableQuery):
 
     def __await__(self) -> Generator[Any, None, bool]:
         if self._db is None:
-            self._db = self.model._meta.db  # type: ignore
+            self._db = self._choose_db()  # type: ignore
         self._make_query()
         return self._execute().__await__()
 
@@ -988,7 +1027,7 @@ class CountQuery(AwaitableQuery):
 
     def __await__(self) -> Generator[Any, None, int]:
         if self._db is None:
-            self._db = self.model._meta.db  # type: ignore
+            self._db = self._choose_db()  # type: ignore
         self._make_query()
         return self._execute().__await__()
 
@@ -1076,7 +1115,8 @@ class FieldSelectQuery(AwaitableQuery):
             return lambda x: x
 
         if field in self.annotations:
-            field_object = self.annotations[field].field_object
+            annotation = self.annotations[field]
+            field_object = getattr(annotation, "field_object", None)
             if field_object:
                 return field_object.to_python_value
             return lambda x: x
@@ -1094,6 +1134,9 @@ class FieldSelectQuery(AwaitableQuery):
     def _resolve_group_bys(self, *field_names: str):
         group_bys = []
         for field_name in field_names:
+            if field_name in self._annotations:
+                group_bys.append(Term(field_name))
+                continue
             field_split = field_name.split("__")
             related_table, related_db_field = self._join_table_with_forwarded_fields(
                 model=self.model,
@@ -1178,7 +1221,7 @@ class ValuesListQuery(FieldSelectQuery):
 
     def __await__(self) -> Generator[Any, None, List[Any]]:
         if self._db is None:
-            self._db = self.model._meta.db  # type: ignore
+            self._db = self._choose_db()  # type: ignore
         self._make_query()
         return self._execute().__await__()  # pylint: disable=E1101
 
@@ -1264,7 +1307,7 @@ class ValuesQuery(FieldSelectQuery):
 
     def __await__(self) -> Generator[Any, None, List[dict]]:
         if self._db is None:
-            self._db = self.model._meta.db  # type: ignore
+            self._db = self._choose_db()  # type: ignore
         self._make_query()
         return self._execute().__await__()  # pylint: disable=E1101
 

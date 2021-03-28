@@ -20,9 +20,10 @@ from typing import (
 )
 
 from pypika import JoinType, Parameter, Query, Table
-from pypika.terms import ArithmeticExpression
+from pypika.terms import ArithmeticExpression, Function
 
 from tortoise.exceptions import OperationalError
+from tortoise.expressions import F
 from tortoise.fields.base import Field
 from tortoise.fields.relational import (
     BackwardFKRelation,
@@ -33,8 +34,8 @@ from tortoise.fields.relational import (
 from tortoise.query_utils import QueryModifier
 
 if TYPE_CHECKING:  # pragma: nocoverage
-    from tortoise.models import Model
     from tortoise.backends.base.client import BaseDBAsyncClient
+    from tortoise.models import Model
     from tortoise.query_utils import Prefetch
     from tortoise.queryset import QuerySet
 
@@ -209,34 +210,48 @@ class BaseExecutor:
             ]
             await self.db.execute_insert(self.insert_query_all, values)
 
-    async def execute_bulk_insert(self, instances: "Iterable[Model]") -> None:
-        values_lists_all = []
-        values_lists = []
-        for instance in instances:
-            if instance._custom_generated_pk:
-                values_lists_all.append(
-                    [
-                        self.column_map[field_name](getattr(instance, field_name), instance)
-                        for field_name in self.regular_columns_all
-                    ]
-                )
-            else:
-                values_lists.append(
-                    [
-                        self.column_map[field_name](getattr(instance, field_name), instance)
-                        for field_name in self.regular_columns
-                    ]
-                )
+    @staticmethod
+    def _chunk(instances: "Iterable[Model]", batch_size: Optional[int] = None):
+        if not batch_size:
+            yield instances
+        else:
+            instances = list(instances)
+            for i in range(0, len(instances), batch_size):
+                yield instances[i : i + batch_size]  # noqa:E203
 
-        if values_lists_all:
-            await self.db.execute_many(self.insert_query_all, values_lists_all)
-        if values_lists:
-            await self.db.execute_many(self.insert_query, values_lists)
+    async def execute_bulk_insert(
+        self,
+        instances: "Iterable[Model]",
+        batch_size: Optional[int] = None,
+    ) -> None:
+        for instance_chunk in self._chunk(instances, batch_size):
+            values_lists_all = []
+            values_lists = []
+            for instance in instance_chunk:
+                if instance._custom_generated_pk:
+                    values_lists_all.append(
+                        [
+                            self.column_map[field_name](getattr(instance, field_name), instance)
+                            for field_name in self.regular_columns_all
+                        ]
+                    )
+                else:
+                    values_lists.append(
+                        [
+                            self.column_map[field_name](getattr(instance, field_name), instance)
+                            for field_name in self.regular_columns
+                        ]
+                    )
+
+            if values_lists_all:
+                await self.db.execute_many(self.insert_query_all, values_lists_all)
+            if values_lists:
+                await self.db.execute_many(self.insert_query, values_lists)
 
     def get_update_sql(
         self,
         update_fields: Optional[Iterable[str]],
-        arithmetic: Optional[Dict[str, ArithmeticExpression]],
+        arithmetic_or_function: Optional[Dict[str, Union[ArithmeticExpression, Function]]],
     ) -> str:
         """
         Generates the SQL for updating a model depending on provided update_fields.
@@ -245,7 +260,7 @@ class BaseExecutor:
         key = ",".join(update_fields) if update_fields else ""
         if key in self.update_cache:
             return self.update_cache[key]
-        arithmetic = arithmetic or {}
+        arithmetic_or_function = arithmetic_or_function or {}
         table = self.model._meta.basetable
         query = self.db.query_class.update(table)
         count = 0
@@ -253,11 +268,14 @@ class BaseExecutor:
             db_column = self.model._meta.fields_db_projection[field]
             field_object = self.model._meta.fields_map[field]
             if not field_object.pk:
-                if db_column not in arithmetic.keys():
+                if field not in arithmetic_or_function.keys():
                     query = query.set(db_column, self.parameter(count))
                     count += 1
                 else:
-                    query = query.set(db_column, arithmetic.get(db_column))
+                    value = F.resolver_arithmetic_expression(
+                        self.model, arithmetic_or_function.get(field)
+                    )[0]
+                    query = query.set(db_column, value)
 
         query = query.where(table[self.model._meta.db_pk_column] == self.parameter(count))
 
@@ -268,18 +286,20 @@ class BaseExecutor:
         self, instance: "Union[Type[Model], Model]", update_fields: Optional[Iterable[str]]
     ) -> int:
         values = []
-        arithmetic = {}
+        arithmetic_or_function = {}
         for field in update_fields or self.model._meta.fields_db_projection.keys():
             if not self.model._meta.fields_map[field].pk:
                 instance_field = getattr(instance, field)
-                if isinstance(instance_field, ArithmeticExpression):
-                    arithmetic[field] = instance_field
+                if isinstance(instance_field, (ArithmeticExpression, Function)):
+                    arithmetic_or_function[field] = instance_field
                 else:
                     value = self.column_map[field](instance_field, instance)
                     values.append(value)
         values.append(self.model._meta.pk.to_db_value(instance.pk, instance))
         return (
-            await self.db.execute_query(self.get_update_sql(update_fields, arithmetic), values)
+            await self.db.execute_query(
+                self.get_update_sql(update_fields, arithmetic_or_function), values
+            )
         )[0]
 
     async def execute_delete(self, instance: "Union[Type[Model], Model]") -> int:
@@ -329,7 +349,8 @@ class BaseExecutor:
         for instance in instance_list:
             relation_container = getattr(instance, field)
             relation_container._set_result_for_query(
-                related_object_map.get(getattr(instance, related_field_name), []), to_attr,
+                related_object_map.get(getattr(instance, related_field_name), []),
+                to_attr,
             )
         return instance_list
 
@@ -368,7 +389,9 @@ class BaseExecutor:
         for instance in instance_list:
             obj = related_object_map.get(getattr(instance, related_field_name), None)
             setattr(
-                instance, f"_{field}", obj,
+                instance,
+                f"_{field}",
+                obj,
             )
             if to_attr:
                 setattr(instance, to_attr, obj)
@@ -386,9 +409,7 @@ class BaseExecutor:
             for instance in instance_list
         }
 
-        field_object: ManyToManyFieldInstance = self.model._meta.fields_map[  # type: ignore
-            field
-        ]
+        field_object: ManyToManyFieldInstance = self.model._meta.fields_map[field]  # type: ignore
 
         through_table = Table(field_object.through)
 
